@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BonkPay Checkout</title>
+  <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+  <style>
+    body { font-family: Arial, sans-serif; }
+    .container { max-width: 500px; margin: 0 auto; padding: 20px; }
+    .btn { padding: 10px 20px; background-color: #007bff; color: #fff; border: none; cursor: pointer; }
+    .btn:disabled { background-color: #ccc; cursor: not-allowed; }
+  </style>
+  <script>
+    // Load @solana/web3 and make it globally available
+    (function() {
+      const script = document.createElement('script');
+      script.src = 'https://unpkg.com/@solana/web3.js@1.92.3/lib/index.iife.js';
+      script.onload = () => {
+        window.solanaWeb3 = solanaWeb3;
+      };
+      document.head.appendChild(script);
+    })();
+  </script>
+  <script>
+    // Load @solana/spl-token and make it globally available
+    (function() {
+      const script = document.createElement('script');
+      script.src = 'https://unpkg.com/@solana/spl-token@0.1.8/lib/index.iife.js';
+      script.onload = () => {
+        window.splToken = splToken;
+      };
+      document.head.appendChild(script);
+    })();
+  </script>
+</head>
+<body>
+  <div class="container">
+    <h1>Checkout</h1>
+    <div id="paymentForm">
+      <p id="amountLabel">Amount: <span id="amountUSD"></span> USD / <span id="amountBonk"></span> BONK</p>
+      <button id="payButton" class="btn">Pay with Solana Wallet</button>
+    </div>
+    <div id="paymentStatus" style="display: none;">
+      <p>Payment Status: <span id="status"></span></p>
+    </div>
+  </div>
+
+  <script>
+    const amountUSD = new URLSearchParams(window.location.search).get('amountUSD');
+    const transactionId = new URLSearchParams(window.location.search).get('transactionId');
+
+    document.getElementById('amountUSD').innerText = amountUSD;
+
+    async function fetchBonkPrice() {
+      const response = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=bonk&vs_currencies=usd');
+      const data = await response.json();
+      return data.bonk.usd;
+    }
+
+    async function loadTransactionDetails() {
+      const response = await fetch(`/api/transactions/${transactionId}`);
+      const transaction = await response.json();
+      document.getElementById('amountBonk').innerText = transaction.amountBonk.toFixed(2);
+    }
+
+    async function payWithSolana() {
+      if (window.solana && window.solana.isPhantom) {
+        const provider = window.solana;
+        try {
+          await provider.connect();
+          const payerPublicKey = provider.publicKey;
+          const mintPublicKey = new solanaWeb3.PublicKey('DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263');
+          
+          const response = await fetch(`/api/transactions/${transactionId}`);
+          const transactionDetails = await response.json();
+          const recipientPublicKey = new solanaWeb3.PublicKey(transactionDetails.recipientPublicKey);
+
+          const payerTokenAccount = await solanaWeb3.Token.getAssociatedTokenAddress(
+            solanaWeb3.ASSOCIATED_TOKEN_PROGRAM_ID,
+            solanaWeb3.TOKEN_PROGRAM_ID,
+            mintPublicKey,
+            payerPublicKey,
+            false
+          );
+          const recipientTokenAccount = await solanaWeb3.Token.getAssociatedTokenAddress(
+            solanaWeb3.ASSOCIATED_TOKEN_PROGRAM_ID,
+            solanaWeb3.TOKEN_PROGRAM_ID,
+            mintPublicKey,
+            recipientPublicKey,
+            false
+          );
+
+          const transaction = new solanaWeb3.Transaction().add(
+            splToken.Token.createTransferInstruction(
+              solanaWeb3.TOKEN_PROGRAM_ID,
+              payerTokenAccount,
+              recipientTokenAccount,
+              payerPublicKey,
+              [],
+              parseFloat(document.getElementById('amountBonk').innerText)
+            )
+          );
+
+          const { signature } = await provider.signAndSendTransaction(transaction);
+          document.getElementById('status').innerText = 'Payment Successful';
+          document.getElementById('paymentStatus').style.display = 'block';
+
+          // Update transaction status on server
+          await fetch(`/api/transactions/${transactionId}`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ status: 'completed', signature })
+          });
+        } catch (err) {
+          console.error(err);
+          document.getElementById('status').innerText = 'Payment Failed';
+          document.getElementById('paymentStatus').style.display = 'block';
+        }
+      } else {
+        alert('Please install a Solana wallet.');
+      }
+    }
+
+    document.getElementById('payButton').addEventListener('click', payWithSolana);
+    loadTransactionDetails();
+  </script>
+</body>
+</html>

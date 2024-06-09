@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BonkPay Merchant Dashboard</title>
+  <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+  <style>
+    body { font-family: Arial, sans-serif; }
+    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+    .card { margin-top: 20px; }
+    .nav-link { cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1 class="my-4">BonkPay Merchant Dashboard</h1>
+    <ul class="nav nav-tabs">
+      <li class="nav-item">
+        <a class="nav-link active" id="registerTab" onclick="showRegisterForm()">Register</a>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link" id="loginTab" onclick="showLoginForm()">Login</a>
+      </li>
+    </ul>
+
+    <div id="registerFormContainer" class="card">
+      <div class="card-body">
+        <h5 class="card-title">Register</h5>
+        <form id="registerForm">
+          <div class="form-group">
+            <label for="name">Name</label>
+            <input type="text" class="form-control" id="name" required>
+          </div>
+          <div class="form-group">
+            <label for="email">Email</label>
+            <input type="email" class="form-control" id="email" required>
+          </div>
+          <div class="form-group">
+            <label for="password">Password</label>
+            <input type="password" class="form-control" id="password" required>
+          </div>
+          <div class="form-group">
+            <label for="recipientPublicKey">Recipient Solana Wallet Address</label>
+            <input type="text" class="form-control" id="recipientPublicKey" required>
+          </div>
+          <div class="form-group">
+            <label for="redirectUrl">Redirect URL</label>
+            <input type="url" class="form-control" id="redirectUrl" required>
+          </div>
+          <button type="submit" class="btn btn-primary">Register</button>
+        </form>
+      </div>
+    </div>
+
+    <div id="loginFormContainer" class="card" style="display: none;">
+      <div class="card-body">
+        <h5 class="card-title">Login</h5>
+        <form id="loginForm">
+          <div class="form-group">
+            <label for="loginEmail">Email</label>
+            <input type="email" class="form-control" id="loginEmail" required>
+          </div>
+          <div class="form-group">
+            <label for="loginPassword">Password</label>
+            <input type="password" class="form-control" id="loginPassword" required>
+          </div>
+          <button type="submit" class="btn btn-primary">Login</button>
+        </form>
+      </div>
+    </div>
+
+    <div id="dashboardContainer" style="display: none;">
+      <div class="card">
+        <div class="card-body">
+          <h5 class="card-title">Transactions</h5>
+          <ul id="transactionsList" class="list-group"></ul>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-body">
+          <h5 class="card-title">API Key</h5>
+          <p id="apiKey" class="card-text"></p>
+          <button class="btn btn-primary" onclick="logout()">Logout</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function showRegisterForm() {
+      document.getElementById('registerFormContainer').style.display = 'block';
+      document.getElementById('loginFormContainer').style.display = 'none';
+      document.getElementById('registerTab').classList.add('active');
+      document.getElementById('loginTab').classList.remove('active');
+    }
+
+    function showLoginForm() {
+      document.getElementById('registerFormContainer').style.display = 'none';
+      document.getElementById('loginFormContainer').style.display = 'block';
+      document.getElementById('registerTab').classList.remove('active');
+      document.getElementById('loginTab').classList.add('active');
+    }
+
+    document.getElementById('registerForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const name = document.getElementById('name').value;
+      const email = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+      const recipientPublicKey = document.getElementById('recipientPublicKey').value;
+      const redirectUrl = document.getElementById('redirectUrl').value;
+
+      const response = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email, password, recipientPublicKey, redirectUrl })
+      });
+
+      const data = await response.json();
+      if (response.ok) {
+        alert(`Registration successful! Your API key: ${data.apiKey}`);
+        localStorage.setItem('token', data.token);
+        localStorage.setItem('apiKey', data.apiKey);
+        showDashboard(data.apiKey);
+      } else {
+        alert(`Error: ${data.message}`);
+      }
+    });
+
+    document.getElementById('loginForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const email = document.getElementById('loginEmail').value;
+      const password = document.getElementById('loginPassword').value;
+
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
+
+      const data = await response.json();
+      if (response.ok) {
+        alert('Login successful!');
+        localStorage.setItem('token', data.token);
+        localStorage.setItem('apiKey', data.apiKey);
+        showDashboard(data.apiKey);
+      } else {
+        alert(`Error: ${data.message}`);
+      }
+    });
+
+    async function loadTransactions() {
+      const token = localStorage.getItem('token');
+      const response = await fetch('/api/transactions', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+
+      const data = await response.json();
+      if (response.ok) {
+        document.getElementById('transactionsList').innerHTML = '';
+        data.forEach(transaction => {
+          const listItem = document.createElement('li');
+          listItem.classList.add('list-group-item');
+          listItem.innerText = `Amount: ${transaction.amountUSD} USD / ${transaction.amountBonk} BONK - Status: ${transaction.status}`;
+          document.getElementById('transactionsList').appendChild(listItem);
+        });
+      } else {
+        alert(`Error: ${data.message}`);
+      }
+    }
+
+    function showDashboard(apiKey) {
+      document.getElementById('registerFormContainer').style.display = 'none';
+      document.getElementById('loginFormContainer').style.display = 'none';
+      document.getElementById('dashboardContainer').style.display = 'block';
+      document.getElementById('apiKey').innerText = `API Key: ${apiKey}`;
+      loadTransactions();
+    }
+
+    function logout() {
+      localStorage.removeItem('token');
+      localStorage.removeItem('apiKey');
+      location.reload();
+    }
+
+    if (localStorage.getItem('token')) {
+      const apiKey = localStorage.getItem('apiKey');
+      showDashboard(apiKey);
+    } else {
+      showRegisterForm();
+    }
+  </script>
+</body>
+</html>
